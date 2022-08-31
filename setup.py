@@ -4,7 +4,7 @@ from os import path
 
 import pathlib
 
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 
 HERE = pathlib.Path(__file__).parent
 

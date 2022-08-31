@@ -9,8 +9,11 @@ from kafka_connect.kafka_connect import health_check, list_connectors, create_co
 
 class ParseConfigurationFileAction(Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        with open(values, 'r') as f:
-            setattr(namespace, 'configuration', f.read())
+        if values == '-':
+            setattr(namespace, 'configuration', sys.stdin.read())
+        else:
+            with open(values, 'r') as f:
+                setattr(namespace, 'configuration', f.read())
 
 
 def exception_handler(exception_type, exception, traceback):
