@@ -233,5 +233,5 @@ def _is_not_2xx(response_code):
 
 
 def _is_json_response(response):
-    mimetype, options = cgi.parse_header(response.headers.get('Content-Type'))
+    mimetype, options = cgi.parse_header(response.headers.get('Content-Type', ''))
     return mimetype == 'application/json'
