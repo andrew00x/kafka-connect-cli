@@ -4,7 +4,7 @@ import sys
 from argparse import Action
 
 from kafka_connect.kafka_connect import health_check, list_connectors, create_connector, update_connector, \
-    restart_connector, delete_connector, list_connector_tasks, restart_connector_task
+    restart_connector, delete_connector, delete_all_connectors, list_connector_tasks, restart_connector_task
 
 
 class ParseConfigurationFileAction(Action):
@@ -29,6 +29,8 @@ def main():
     backoff_parser.add_argument('--backoff-limit', default=1, help='Number of retries before fail', type=int)
     backoff_parser.add_argument('--delay', default=0, help='How long to wait in seconds between retry attempts',
                                 type=int)
+    verbose_parser = argparse.ArgumentParser(add_help=False)
+    verbose_parser.add_argument('--verbose', action='store_true', default=False)
 
     parser = argparse.ArgumentParser()
 
@@ -36,12 +38,9 @@ def main():
     main_command_parser = parser.add_subparsers(dest='cmd', help='Commands', title='Commands')
     health_check_command_parser = main_command_parser.add_parser('health-check',
                                                                  help='Check all connectors and their tasks',
-                                                                 parents=[common_parser])
+                                                                 parents=[common_parser, verbose_parser])
     connector_command_parser = main_command_parser.add_parser('connector', help='Connector commands')
     connector_task_parser = main_command_parser.add_parser('task', help='Connector task commands')
-
-    # health check
-    health_check_command_parser.add_argument('--verbose', action='store_true', default=False)
 
     # connector
     connector_subcommand_parser = connector_command_parser.add_subparsers(dest='connector_command')
@@ -49,7 +48,6 @@ def main():
     # list
     connector_subcommand_parser.add_parser('list', help='List connectors', parents=[common_parser])
 
-    # create
     connector_common_parser = argparse.ArgumentParser(add_help=False)
     connector_common_parser.add_argument('--name', help='Connector name', required=True)
 
@@ -82,6 +80,9 @@ def main():
     # delete
     connector_subcommand_parser.add_parser('delete', help='Delete connector',
                                            parents=[common_parser, backoff_parser, connector_common_parser])
+    connector_subcommand_parser.add_parser('delete-all', help='Delete connector',
+                                           parents=[common_parser, backoff_parser, connector_common_parser,
+                                                    verbose_parser])
 
     # connector task
     connector_task_common_parser = argparse.ArgumentParser(add_help=False)
@@ -121,6 +122,8 @@ def main():
             restart_connector(args.url, args.name, args.backoff_limit, args.delay)
         elif args.connector_command == 'delete':
             delete_connector(args.url, args.name, args.backoff_limit, args.delay)
+        elif args.connector_command == 'delete-all':
+            delete_all_connectors(args.url, args.name, args.backoff_limit, args.delay, args.verbose)
         else:
             print(parser.format_help())
     elif args.cmd == 'task':

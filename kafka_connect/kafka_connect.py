@@ -1,4 +1,5 @@
 import cgi
+import re
 import time
 from enum import IntEnum
 
@@ -85,6 +86,13 @@ def delete_connector(base_url, connector_name, backoff_limit=1, delay=0):
            delay)
 
 
+def delete_all_connectors(base_url, connector_name_pattern, backoff_limit=1, delay=0, verbose=False):
+    _retry(lambda: _delete_all_connectors(base_url, connector_name_pattern, verbose),
+           lambda err: isinstance(err, requests.ConnectionError),
+           backoff_limit,
+           delay)
+
+
 def list_connector_tasks(base_url, connector_name):
     return _list_connector_tasks(base_url, connector_name)
 
@@ -140,6 +148,15 @@ def _restart_connector(base_url, name):
 
 def _delete_connector(base_url, name):
     _delete(f'{base_url}/connectors/{name}')
+
+
+def _delete_all_connectors(base_url, name_pattern, verbose):
+    name_matcher = re.compile(name_pattern)
+    for connector_name in _get_connectors(base_url):
+        if name_matcher.fullmatch(connector_name):
+            _delete(f'{base_url}/connectors/{connector_name}')
+            if verbose:
+                print(f'Connector {connector_name} deleted')
 
 
 def _list_connector_tasks(base_url, connector_name):
