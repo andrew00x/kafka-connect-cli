@@ -26,32 +26,33 @@ TIMEOUT = 5
 
 
 def health_check(base_url, verbose=False):
+    exit_code = 0
     try:
         for connector_name in _get_connectors(base_url):
             connector_status = _get_connector_status(base_url, connector_name)
             connector_state = State[connector_status['connector']['state']]
-            if connector_state != State.RUNNING:
-                if verbose:
-                    print(f'Connector {connector_name} in state {connector_state.name}')
-                return 1
+            if verbose:
+                print(f'Connector {connector_name} in state {connector_state.name}')
+            if connector_state != State.RUNNING and connector_state != State.PAUSED:
+                exit_code = 1
             # Need to read list of tasks and then check status of each task, even if we can get task id from connector.
             # For some reason API returns status as 'RUNNING' when Kakfa is down.
             for task_id in map(lambda t: t['id']['task'], _get_tasks(base_url, connector_name)):
                 task = _get_task_status(base_url, connector_name, task_id)
                 task_state = State[task['state']]
-                if task_state != State.RUNNING:
+                if task_state != State.RUNNING and task_state != State.PAUSED:
                     if verbose:
                         print(f'Task {task_id} of connector {connector_name} in state {task["state"]}')
-                    return 1
-        return 0
+                    exit_code = 1
     except requests.ConnectionError:
         if verbose:
             print(f'Connection to {base_url} refused')
-        return 1
+        exit_code = 2
     except Exception as err:
         if verbose:
             print(err)
-        return 1
+        exit_code = 3
+    return exit_code
 
 
 def list_connectors(base_url):
@@ -60,6 +61,37 @@ def list_connectors(base_url):
 
 def create_connector(base_url, connector_name, configuration, if_not_exists=False, backoff_limit=1, delay=0):
     return _retry(lambda: _create_connector(base_url, connector_name, configuration, if_not_exists),
+                  lambda err: isinstance(err, requests.ConnectionError),
+                  backoff_limit,
+                  delay)
+
+
+def get_connector(base_url, connector_name, backoff_limit=1, delay=0):
+    def get_connector_func():
+        connector_status = _get_connector_status(base_url, connector_name)
+        connector_state = State[connector_status['connector']['state']]
+        failed_tasks = []
+        try:
+            for task in _get_tasks(base_url, connector_name):
+                task_id = task['id']['task']
+                task = _get_task_status(base_url, connector_name, task_id)
+                task_state = State[task['state']]
+                if task_state == State.FAILED:
+                    failed_tasks.append(task_id)
+                if task_state > connector_state:
+                    connector_state = task_state
+        except Exception:
+            connector_state = State.FAILED
+        return {'connector': connector_name, 'state': connector_state.name, 'failedTasks': failed_tasks}
+
+    return _retry(get_connector_func,
+                  lambda err: isinstance(err, requests.ConnectionError),
+                  backoff_limit,
+                  delay)
+
+
+def get_connector_config(base_url, connector_name, backoff_limit=1, delay=0):
+    return _retry(lambda: _get_connector_config(base_url, connector_name),
                   lambda err: isinstance(err, requests.ConnectionError),
                   backoff_limit,
                   delay)
@@ -86,8 +118,36 @@ def delete_connector(base_url, connector_name, backoff_limit=1, delay=0):
            delay)
 
 
+def pause_connector(base_url, connector_name, backoff_limit=1, delay=0):
+    _retry(lambda: _pause_connector(base_url, connector_name),
+           lambda err: isinstance(err, requests.ConnectionError),
+           backoff_limit,
+           delay)
+
+
+def resume_connector(base_url, connector_name, backoff_limit=1, delay=0):
+    _retry(lambda: _resume_connector(base_url, connector_name),
+           lambda err: isinstance(err, requests.ConnectionError),
+           backoff_limit,
+           delay)
+
+
 def delete_all_connectors(base_url, connector_name_pattern, backoff_limit=1, delay=0, verbose=False):
     _retry(lambda: _delete_all_connectors(base_url, connector_name_pattern, verbose),
+           lambda err: isinstance(err, requests.ConnectionError),
+           backoff_limit,
+           delay)
+
+
+def pause_all_connectors(base_url, connector_name_pattern, backoff_limit=1, delay=0, verbose=False):
+    _retry(lambda: _pause_all_connectors(base_url, connector_name_pattern, verbose),
+           lambda err: isinstance(err, requests.ConnectionError),
+           backoff_limit,
+           delay)
+
+
+def resume_all_connectors(base_url, connector_name_pattern, backoff_limit=1, delay=0, verbose=False):
+    _retry(lambda: _resume_all_connectors(base_url, connector_name_pattern, verbose),
            lambda err: isinstance(err, requests.ConnectionError),
            backoff_limit,
            delay)
@@ -150,13 +210,39 @@ def _delete_connector(base_url, name):
     _delete(f'{base_url}/connectors/{name}')
 
 
+def _pause_connector(base_url, name):
+    _put_json(f'{base_url}/connectors/{name}/pause', None)
+
+
+def _resume_connector(base_url, name):
+    _put_json(f'{base_url}/connectors/{name}/resume', None)
+
+
 def _delete_all_connectors(base_url, name_pattern, verbose):
-    name_matcher = re.compile(name_pattern)
+    name_matcher = re.compile(name_pattern if name_pattern is not None else '.*')
     for connector_name in _get_connectors(base_url):
         if name_matcher.fullmatch(connector_name):
             _delete(f'{base_url}/connectors/{connector_name}')
             if verbose:
                 print(f'Connector {connector_name} deleted')
+
+
+def _pause_all_connectors(base_url, name_pattern, verbose):
+    name_matcher = re.compile(name_pattern if name_pattern is not None else '.*')
+    for connector_name in _get_connectors(base_url):
+        if name_matcher.fullmatch(connector_name):
+            _put_json(f'{base_url}/connectors/{connector_name}/pause', None)
+            if verbose:
+                print(f'Connector {connector_name} paused')
+
+
+def _resume_all_connectors(base_url, name_pattern, verbose):
+    name_matcher = re.compile(name_pattern if name_pattern is not None else '.*')
+    for connector_name in _get_connectors(base_url):
+        if name_matcher.fullmatch(connector_name):
+            _put_json(f'{base_url}/connectors/{connector_name}/resume', None)
+            if verbose:
+                print(f'Connector {connector_name} resumed')
 
 
 def _list_connector_tasks(base_url, connector_name):
@@ -198,6 +284,10 @@ def _get_connector_status(base_url, connector_name):
 
 def _get_connector(base_url, connector_name):
     return _get_json(f'{base_url}/connectors/{connector_name}')
+
+
+def _get_connector_config(base_url, connector_name):
+    return _get_json(f'{base_url}/connectors/{connector_name}/config')
 
 
 def _get_tasks(base_url, connector_name):

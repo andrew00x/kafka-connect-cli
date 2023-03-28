@@ -3,8 +3,10 @@ import json
 import sys
 from argparse import Action
 
-from kafka_connect.kafka_connect import health_check, list_connectors, create_connector, update_connector, \
-    restart_connector, delete_connector, delete_all_connectors, list_connector_tasks, restart_connector_task
+from kafka_connect.kafka_connect import health_check, list_connectors, create_connector, get_connector, \
+    get_connector_config, update_connector, pause_connector, pause_all_connectors, resume_connector, \
+    resume_all_connectors, restart_connector, delete_connector, delete_all_connectors, list_connector_tasks, \
+    restart_connector_task
 
 
 class ParseConfigurationFileAction(Action):
@@ -51,6 +53,9 @@ def main():
     connector_common_parser = argparse.ArgumentParser(add_help=False)
     connector_common_parser.add_argument('--name', help='Connector name', required=True)
 
+    connector_batch_parser = argparse.ArgumentParser(add_help=False)
+    connector_batch_parser.add_argument('--name', help='Connector name pattern', required=False)
+
     create_connector_command_parser = connector_subcommand_parser.add_parser('create', help='Create new connector',
                                                                              parents=[common_parser, backoff_parser,
                                                                                       connector_common_parser])
@@ -63,6 +68,14 @@ def main():
                                                  help='Attempt to create connector only if connector does not already exist',
                                                  action='store_true')
 
+    # get
+    connector_subcommand_parser.add_parser('get', help='Get connector',
+                                           parents=[common_parser, backoff_parser, connector_common_parser])
+
+    # get configuration
+    connector_subcommand_parser.add_parser('configuration', help='Get connector\'s configuration',
+                                           parents=[common_parser, backoff_parser, connector_common_parser])
+
     # update
     update_connector_command_parser = connector_subcommand_parser.add_parser('update', help='Update connector',
                                                                              parents=[common_parser, backoff_parser,
@@ -73,6 +86,20 @@ def main():
                                                 help='Path to file with connector configuration in JSON format',
                                                 action=ParseConfigurationFileAction)
 
+    # pause
+    connector_subcommand_parser.add_parser('pause', help='Pause connector',
+                                           parents=[common_parser, backoff_parser, connector_common_parser])
+    connector_subcommand_parser.add_parser('pause-all', help='Pause all connectors',
+                                           parents=[common_parser, backoff_parser, connector_batch_parser,
+                                                    verbose_parser])
+
+    # resume
+    connector_subcommand_parser.add_parser('resume', help='Resume connector',
+                                           parents=[common_parser, backoff_parser, connector_common_parser])
+    connector_subcommand_parser.add_parser('resume-all', help='Resume all connectors',
+                                           parents=[common_parser, backoff_parser, connector_batch_parser,
+                                                    verbose_parser])
+
     # restart
     connector_subcommand_parser.add_parser('restart', help='Restart connector',
                                            parents=[common_parser, backoff_parser, connector_common_parser])
@@ -80,8 +107,8 @@ def main():
     # delete
     connector_subcommand_parser.add_parser('delete', help='Delete connector',
                                            parents=[common_parser, backoff_parser, connector_common_parser])
-    connector_subcommand_parser.add_parser('delete-all', help='Delete connector',
-                                           parents=[common_parser, backoff_parser, connector_common_parser,
+    connector_subcommand_parser.add_parser('delete-all', help='Delete all connectors',
+                                           parents=[common_parser, backoff_parser, connector_batch_parser,
                                                     verbose_parser])
 
     # connector task
@@ -118,6 +145,22 @@ def main():
             print(json.dumps(
                 update_connector(args.url, args.name, json.loads(args.configuration), args.backoff_limit, args.delay),
                 indent=4))
+        elif args.connector_command == 'get':
+            print(json.dumps(
+                get_connector(args.url, args.name, args.backoff_limit, args.delay),
+                indent=4))
+        elif args.connector_command == 'configuration':
+            print(json.dumps(
+                get_connector_config(args.url, args.name, args.backoff_limit, args.delay),
+                indent=4))
+        elif args.connector_command == 'pause':
+            pause_connector(args.url, args.name, args.backoff_limit, args.delay)
+        elif args.connector_command == 'pause-all':
+            pause_all_connectors(args.url, args.name, args.backoff_limit, args.delay, args.verbose)
+        elif args.connector_command == 'resume':
+            resume_connector(args.url, args.name, args.backoff_limit, args.delay)
+        elif args.connector_command == 'resume-all':
+            resume_all_connectors(args.url, args.name, args.backoff_limit, args.delay, args.verbose)
         elif args.connector_command == 'restart':
             restart_connector(args.url, args.name, args.backoff_limit, args.delay)
         elif args.connector_command == 'delete':
